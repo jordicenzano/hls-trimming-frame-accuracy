@@ -3,7 +3,7 @@
 ![Image of HLS trimming](./img/hls_trim.png)
 
 #Usage
-- Install: ffmpeg
+- Install: ffmpeg and nodejs
 - Ensure ffmpeg is in the PATH
 - Use this syntax: `./trim_hls_frame_acc source_hls_dir dest_file tmp_dir trim_in trim_out`
     - Example: `./trim_hls_frame_acc /hls_test/ /out/test.mp4 /tmp 10.0 21.2`
