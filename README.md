@@ -1,5 +1,7 @@
 # HLS super fast frame accuracy trimming (JS)
 
+![Image of HLS trimming](./img/hls_trim.png)
+
 #Usage
 - Install: ffmpeg
 - Ensure ffmpeg is in the PATH
