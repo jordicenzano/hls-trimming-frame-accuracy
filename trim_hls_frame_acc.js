@@ -7,12 +7,6 @@
 //SUPER FAST FRAME ACCURACY HLS TRIMMING
 // ***************************************************************
     
-//Future work:
-//TODO: Handle single segment trims
-//TODO: Use the manifest as input parameter, not directory
-//TODO: Find the first and last segment based on segment timestamp, now we are assuming what are the 1st and last segments
-//TODO: Add input parameters to the script (manifest, out_file, in_ts, out_ts), now they are hard coded
-
 //External
 const fs = require('fs');
 var path = require('path');
