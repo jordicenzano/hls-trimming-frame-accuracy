@@ -13,8 +13,8 @@ var path = require('path');
 const child_process = require('child_process');
 
 //Functions
-function create_split_obj(source_dir, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms, out_trim_ts_ms) {
-
+function create_split_obj(source, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms, out_trim_ts_ms) {
+    var source_dir = "";
     var dest_file_name = path.basename(dest_file);
 
     var ret = {
@@ -33,15 +33,36 @@ function create_split_obj(source_dir, tmp_dir, in_file_ext, dest_file, in_trim_t
     deleteFileIfExists(ret.dest_file_name_video);
     deleteFileIfExists(ret.dest_file_name_audio);
 
-    //Read all .ts files from the source_dir, and we assume we want to
-    //trim in the 1st segment and trim out the last one
-    var files_array = fs.readdirSync(source_dir);
+    //Array of input files
+    var files_array = [];
 
-    //Del everything from array but .ts
-    filterArray(files_array, in_file_ext);
+    //Check if source is a manifest
+    if  ((source.length > 4) && (source.substring(source.length - 5, source.length).toLocaleLowerCase() == ".m3u8" ) ) {
+        //Only manifest with relative paths are allowed
+
+        //Read manifest
+        var manifest = fs.readFileSync(source).toString();
+
+        files_array = getMediafilesFromManifest(manifest);
+        console.log("Media files from manifest: " + files_array.join(","));
+
+        var source_dir = path.dirname(source);
+        console.log("Manifest directory: " + source_dir);
+    }
+    else {
+        //Assume source is a directory
+        //Read all .ts files from the source, and we assume we want to
+        //trim in the 1st segment and trim out the last one
+        files_array = fs.readdirSync(source);
+
+        //Del everything from array but .ts
+        filterArray(files_array, in_file_ext);
+
+        source_dir = source;
+    }
 
     //Convert file name to path
-    //addArray(files_array, source_dir);
+    //addArray(files_array, source);
 
     for (var n = 0; n < files_array.length; n++) {
         var obj = {
@@ -85,6 +106,20 @@ function create_split_obj(source_dir, tmp_dir, in_file_ext, dest_file, in_trim_t
     }
 
     return ret;
+}
+
+function getMediafilesFromManifest(str) {
+    var lines = str.split('\n');
+    var media = [];
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+
+        if ((line.length > 0) && (line[0] != "#"))
+            media.push(line);
+    }
+
+    return media;
 }
 
 function path_join(/* path segments */) {
@@ -563,10 +598,11 @@ if (process.argv.length != 7) {
     console.log("Incorrect number of arguments");
     console.log("You should use:");
     console.log("./trim_hls_frame_acc source_hls_dir dest_file tmp_dir trim_in trim_out\n");
-    console.log("Example: ./trim_hls_frame_acc /hls_test/ /out/test.mp4 /tmp 10.0 21.2");
+    console.log("Example1: ./trim_hls_frame_acc /hls_test/ /out/test.mp4 /tmp 10.0 21.2");
+    console.log("Example2: ./trim_hls_frame_acc/test.m3u8 /hls_test/ /out/test.mp4 /tmp 10.0 21.2");
     return 1;
 }
-var hls_source_dir = process.argv[2];
+var hls_source = process.argv[2];
 var dest_file = process.argv[3];
 var tmp_dir = process.argv[4];
 var in_trim_ts_ms = parseFloat(process.argv[5]);
@@ -574,7 +610,7 @@ var out_trim_ts_ms = parseFloat(process.argv[6]);
 
 var start_exec_ms = new Date().getTime();
 
-var split_obj = create_split_obj(hls_source_dir, tmp_dir, ".ts", dest_file, in_trim_ts_ms, out_trim_ts_ms);
+var split_obj = create_split_obj(hls_source, tmp_dir, ".ts", dest_file, in_trim_ts_ms, out_trim_ts_ms);
 
 if (split_obj.segments.length <= 1) {
     //TODO: implement single segment version (in, and out points in the same segment)

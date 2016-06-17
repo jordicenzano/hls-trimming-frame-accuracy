@@ -5,8 +5,9 @@
 #Usage
 - Install: ffmpeg and nodejs
 - Ensure ffmpeg is in the PATH
-- Use this syntax: `./trim_hls_frame_acc source_hls_dir dest_file tmp_dir trim_in trim_out`
-    - Example: `./trim_hls_frame_acc /hls_test/ /out/test.mp4 /tmp 10.0 21.2`
+- Use this syntax: `./trim_hls_frame_acc source_hls dest_file tmp_dir trim_in trim_out`
+    - Example1: `./trim_hls_frame_acc /hls_test/ /out/test.mp4 /tmp 10.0 21.2`
+    - Example2: `./trim_hls_frame_acc /hls_test/test.m3u8 /out/test.mp4 /tmp 10.0 21.2`
 
 #Description
 - This is an evolution of this code: [Trim HLS stream with frame accuracy using [ffmpeg](https://ffmpeg.org/) and Bash script](https://jordicenzano.name/2014/08/07/trim-hls-stream-with-frame-accuracy-using-ffmpeg-and-bash-script-2/)
@@ -36,6 +37,7 @@
 - All the chunks start with and I frame
 - Only 1 video and 1 audio present in the input files
 - The trim in timestamp and the trim out timestamp belongs to different chunks
+- If you use hls manifest (.m3u8) as a source, only relative local paths are allowed
 
 #Future work
 - Handle single segment trims (in point and out point in the same segment)

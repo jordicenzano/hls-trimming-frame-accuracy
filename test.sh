@@ -5,6 +5,7 @@
 
 dest_file="/Users/jcenzano/Movies/hls_wowza/out/out_trimmed.mp4"
 hls_source_dir="/Users/jcenzano/Movies/hls_wowza/"
+hls_source_manifest="/Users/jcenzano/Movies/hls_wowza/chunklist_vod.m3u8"
 tmp_dir="/Users/jcenzano/Movies/hls_wowza/tmp"
 
 #Trim 10 frames from the first segment. Assuming 30fps and startTimestamp of 1st chunk = 71336.250067s
@@ -15,4 +16,5 @@ in_trim_ts_ms=71336583.4003333
 #( 71352.250067 + ((1/30) * 60) ) * 1000.0
 out_trim_ts_ms=71354250.067
 
-./trim_hls_frame_acc.js $hls_source_dir $dest_file $tmp_dir $in_trim_ts_ms $out_trim_ts_ms
+#./trim_hls_frame_acc.js $hls_source_dir $dest_file $tmp_dir $in_trim_ts_ms $out_trim_ts_ms
+./trim_hls_frame_acc.js $hls_source_manifest $dest_file $tmp_dir $in_trim_ts_ms $out_trim_ts_ms
