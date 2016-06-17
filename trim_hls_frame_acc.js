@@ -6,19 +6,22 @@
 
 //SUPER FAST FRAME ACCURACY HLS TRIMMING
 // ***************************************************************
-    
+
+//TODO: JOC fix extra audio frames at the end (probably due to the introduces offset)
+//TODO: JOC Only split the ones that needs:
+
 //External
 const fs = require('fs');
 var path = require('path');
 const child_process = require('child_process');
 
 //Functions
-function create_split_obj(source, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms, out_trim_ts_ms) {
-    var source_dir = "";
+function create_trim_obj(source, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms, out_trim_ts_ms) {
     var dest_file_name = path.basename(dest_file);
 
     var ret = {
         "dest_file": dest_file,
+        "tmp_dir": tmp_dir,
         "dest_file_name_video": path_join(tmp_dir, dest_file_name + ".video.ts"),
         "dest_file_name_audio": path_join(tmp_dir, dest_file_name + ".audio.aac"),
         "in_trim_ts_ms": in_trim_ts_ms,
@@ -26,15 +29,14 @@ function create_split_obj(source, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms
         "single_segment": false,
         "first_segment": null,
         "last_segment": null,
+        "source_dir": "",
+        "files": [],
         "segments": []
     };
 
     deleteFileIfExists(ret.dest_file);
     deleteFileIfExists(ret.dest_file_name_video);
     deleteFileIfExists(ret.dest_file_name_audio);
-
-    //Array of input files
-    var files_array = [];
 
     //Check if source is a manifest
     if  ((source.length > 4) && (source.substring(source.length - 5, source.length).toLocaleLowerCase() == ".m3u8" ) ) {
@@ -43,69 +45,137 @@ function create_split_obj(source, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms
         //Read manifest
         var manifest = fs.readFileSync(source).toString();
 
-        files_array = getMediafilesFromManifest(manifest);
-        console.log("Media files from manifest: " + files_array.join(","));
+        ret.files_array = getMediafilesFromManifest(manifest);
+        console.log("Media files from manifest: " + ret.files_array.join(","));
 
-        var source_dir = path.dirname(source);
-        console.log("Manifest directory: " + source_dir);
+        ret.source_dir = path.dirname(source);
+        console.log("Manifest directory: " + ret.source_dir);
     }
     else {
         //Assume source is a directory
         //Read all .ts files from the source, and we assume we want to
         //trim in the 1st segment and trim out the last one
-        files_array = fs.readdirSync(source);
+        ret.files_array = fs.readdirSync(source);
 
         //Del everything from array but .ts
-        filterArray(files_array, in_file_ext);
+        filterArray(ret.files_array, in_file_ext);
 
-        source_dir = source;
+        ret.source_dir = source;
     }
 
     //Convert file name to path
     //addArray(files_array, source);
 
-    for (var n = 0; n < files_array.length; n++) {
-        var obj = {
-            "type": "middle",
-            "original_segment": path_join(source_dir, files_array[n]),
-            "video_compress_ts": path_join(tmp_dir, files_array[n] + ".video.ts"),
-            "audio_compress_aac": path_join(tmp_dir, files_array[n] + ".audio.aac")
-        };
+    return ret;
+}
 
-        if (files_array.length == 1) { //In-Out trim points same segment
-            ret.single_segment = true;
-            obj.type = "first-last";
-            obj.video_uncompress_avi = files_array[n] + ".video.avi";
-            obj.video_uncompress_avi_trimmed_in_tmp = path_join(tmp_dir, files_array[n] + ".video.trimmed_in.avi");
-            obj.video_uncompress_avi_trimmed = path_join(tmp_dir, files_array[n] + ".video.trimmed_in_out.avi");
-            obj.video_compress_ts_trimmed = path_join(tmp_dir, files_array[n] + ".video.trimmed_in_out.ts");
+function findFirstSegment(trim_obj) {
+    var n = 0;
+    var last_segment = null;
 
-            ret.first_segment = obj;
-            ret.last_segment = obj;
+    while ( (n < trim_obj.segments.length) && (trim_obj.first_segment == null) ) {
+        var segment = trim_obj.segments[n];
+
+        getSegmentFormat(segment);
+        getSegmentStreamsData(segment);
+
+        //If tin < first ts first segment then tin = 0
+        if (trim_obj.in_trim_ts_ms <= (parseFloat(segment.video_stream.start_time) * 1000.0)) {
+            if (n == 0)
+                trim_obj.first_segment = segment;
+            else
+                trim_obj.first_segment = last_segment;
         }
-        else if (n == 0) { //In segment data
-            obj.type = "first";
-            obj.video_uncompress_avi = path_join(tmp_dir, files_array[n] + ".video.avi");
-            obj.video_uncompress_avi_trimmed = path_join(tmp_dir, files_array[n] + ".video.trimmed_in.avi");
-            obj.video_compress_ts_trimmed = path_join(tmp_dir, files_array[n] + ".video.trimmed_in.ts");
-            obj.audio_compress_aac_trimmed = path_join(tmp_dir, files_array[n] + ".audio.trimmed_in.aac");
-
-            ret.first_segment = obj;
+        else {
+            last_segment = segment;
         }
-        else if (n == (files_array.length - 1) ){ //Out segment data
-            obj.type = "last";
-            obj.video_uncompress_avi = path_join(tmp_dir, files_array[n] + ".video.avi");
-            obj.video_uncompress_avi_trimmed = path_join(tmp_dir, files_array[n] + ".video.trimmed_out.avi");
-            obj.video_compress_ts_trimmed = path_join(tmp_dir, files_array[n] + ".video.trimmed_out.ts");
-            obj.audio_compress_aac_trimmed = path_join(tmp_dir, files_array[n] + ".audio.trimmed_out.aac");
-
-            ret.last_segment = obj;
-        }
-
-        ret.segments.push(obj);
+        n++;
     }
 
-    return ret;
+    if (trim_obj.first_segment != null) {
+        if ( ("type" in trim_obj.first_segment) && (trim_obj.first_segment.type == "last") )
+            trim_obj.first_segment.type = "first-last";
+        else
+            trim_obj.first_segment.type = "first";
+
+        trim_obj.first_segment.video_uncompress_avi = path_join(trim_obj.tmp_dir, trim_obj.first_segment.original_segment_name + ".video.avi");
+        trim_obj.first_segment.video_uncompress_avi_trimmed = path_join(trim_obj.tmp_dir, trim_obj.first_segment.original_segment_name + ".video.trimmed_in.avi");
+        trim_obj.first_segment.video_compress_ts_trimmed = path_join(trim_obj.tmp_dir, trim_obj.first_segment.original_segment_name + ".video.trimmed_in.ts");
+        trim_obj.first_segment.audio_compress_aac_trimmed = path_join(trim_obj.tmp_dir, trim_obj.first_segment.original_segment_name + ".audio.trimmed_in.aac");
+    }
+
+    return (trim_obj.first_segment != null);
+}
+
+function findLastSegment(trim_obj) {
+    var n = trim_obj.segments.length - 1;
+    var last_segment = null;
+
+    while ( (n >= 0) && (trim_obj.last_segment == null) ) {
+        var segment = trim_obj.segments[n];
+
+        getSegmentFormat(segment);
+        getSegmentStreamsData(segment);
+
+        //If tin < first ts first segment then tin = 0
+        if (trim_obj.out_trim_ts_ms >= ((parseFloat(segment.video_stream.start_time) + parseFloat(segment.video_stream.duration))* 1000.0)) {
+            if (n == trim_obj.segments.length)
+                trim_obj.last_segment = segment;
+            else
+                trim_obj.last_segment = last_segment;
+        }
+        else {
+            last_segment = segment;
+        }
+        n--;
+    }
+
+    if (trim_obj.last_segment != null) {
+        if ( ("type" in trim_obj.last_segment) && (trim_obj.last_segment.type == "first") )
+            trim_obj.last_segment.type = "first-last";
+        else
+            trim_obj.last_segment.type = "last";
+
+        trim_obj.last_segment.video_uncompress_avi = path_join(trim_obj.tmp_dir, trim_obj.last_segment.original_segment_name + ".video.avi");
+        trim_obj.last_segment.video_uncompress_avi_trimmed = path_join(trim_obj.tmp_dir, trim_obj.last_segment.original_segment_name + ".video.trimmed_out.avi");
+        trim_obj.last_segment.video_compress_ts_trimmed = path_join(trim_obj.tmp_dir, trim_obj.last_segment.original_segment_name + ".video.trimmed_out.ts");
+        trim_obj.last_segment.audio_compress_aac_trimmed = path_join(trim_obj.tmp_dir, trim_obj.last_segment.original_segment_name + ".audio.trimmed_out.aac");
+    }
+
+    return (trim_obj.last_segment != null);
+}
+
+function findSegmentType(trim_obj) {
+
+    //Create segments objects
+    for (var n = 0; n < trim_obj.files_array.length; n++) {
+        var obj = {
+            "type": "unknown",
+            "original_segment_name": trim_obj.files_array[n],
+            "original_segment": path_join(trim_obj.source_dir, trim_obj.files_array[n]),
+            "video_compress_ts": path_join(tmp_dir, trim_obj.files_array[n] + ".video.ts"),
+            "audio_compress_aac": path_join(tmp_dir, trim_obj.files_array[n] + ".audio.aac")
+        };
+        trim_obj.segments.push(obj);
+    }
+
+    //Find the first segment based on input ts, assuming that all starts with I frame, and that the A/V delay in the input source is reasonable
+    if (findFirstSegment(trim_obj) == false) {
+        console.log("ERROR! Finding the first segment, probably the tin > last ts in the stream");
+        return false;
+    }
+
+    //Find the last segment based on input ts, assuming that all starts with I frame, and that the A/V delay in the input source is reasonable
+    if (findLastSegment(trim_obj) == false) {
+        console.log("ERROR! Finding the last segment, probably the tout < first ts in the stream");
+        return false;
+    }
+
+    if (trim_obj.first_segment.type == "") {
+        //TODO: implement single segment version (in, and out points in the same segment)
+        console.log("In this version we need the in and out points in different segments");
+        return false;
+    }
 }
 
 function getMediafilesFromManifest(str) {
@@ -162,8 +232,8 @@ function filterArray(array, ext) {
     }
 }
 
-function splitVideoTSAudioAacFromTSFiles(split_obj) {
-    split_obj.forEach(splitVideoTSAudioAacFromTSFile);
+function splitVideoTSAudioAacFromTSFiles(trim_obj) {
+    trim_obj.forEach(splitVideoTSAudioAacFromTSFile);
 }
 
 function splitVideoTSAudioAacFromTSFile(obj_segment, index, array) {
@@ -209,26 +279,30 @@ function deleteFileIfExists(file) {
 }
 
 function getSegmentFormat(obj_segment) {
-    var cmd = "ffprobe -show_format -print_format json " + obj_segment.original_segment;
-    var out_str = child_process.execSync(cmd);
+    if (!("file_format" in obj_segment)) {
+        var cmd = "ffprobe -show_format -print_format json " + obj_segment.original_segment;
+        obj_segment.file_format = JSON.parse(child_process.execSync(cmd));
+    }
 
-    return JSON.parse(out_str);
+    return obj_segment.file_format;
 }
 
 function getSegmentStreamsData(obj_segment) {
+    if ( (!("video_stream" in obj_segment)) && (!("audio_stream" in obj_segment)) ) {
+        var cmd = "ffprobe -show_streams -print_format json " + obj_segment.original_segment;
+        var streams_data =  JSON.parse(child_process.execSync(cmd));
 
-    var cmd = "ffprobe -show_streams -print_format json " + obj_segment.original_segment;
-    var out_str = child_process.execSync(cmd);
-
-    return JSON.parse(out_str);
+        obj_segment.video_stream = getVideoStreamFromStreamData(streams_data);
+        obj_segment.audio_stream = getAudioStreamFromStreamData(streams_data);
+    }
 }
 
-function getVideoStream (streams) {
-    return getByTypeStream(streams, "video");
+function getVideoStreamFromStreamData(streams_data) {
+    return getByTypeStream(streams_data, "video");
 }
 
-function getAudioStream (streams) {
-    return getByTypeStream(streams, "audio");
+function getAudioStreamFromStreamData(streams_data) {
+    return getByTypeStream(streams_data, "audio");
 }
 
 function getByTypeStream (streams, type, error_if_many) {
@@ -359,104 +433,84 @@ function encodeVideoStream(obj_segment) {
     return true;
 }
 
-function concatVideoSegments(split_obj) {
+function catVideoSegments(trim_obj) {
 
-    deleteFileIfExists(split_obj.dest_file_name_video);
+    deleteFileIfExists(trim_obj.dest_file_name_video);
+
+    var is_first_detected = false;
+    var is_last_detected = false;
 
     var cat_str = "concat:";
-    for (var n = 0; n < split_obj.segments.length; n++) {
-        var seg_obj = split_obj.segments[n];
+    var n = 0;
+    while ((n < trim_obj.segments.length) && (is_last_detected == false)) {
+        var seg_obj = trim_obj.segments[n];
 
-        var file = seg_obj.video_compress_ts;
-        if ( ("video_compress_ts_trimmed" in seg_obj) && (seg_obj.video_compress_ts_trimmed != "") )
-            file = seg_obj.video_compress_ts_trimmed;
+        if ((is_first_detected == false) && (seg_obj.type == "first"))
+            is_first_detected = true;
 
-        cat_str = cat_str + file;
-        if (n < split_obj.segments.length - 1)
-            cat_str = cat_str + "|";
+        if (is_first_detected) {
+            var file = seg_obj.video_compress_ts;
+            if (("video_compress_ts_trimmed" in seg_obj) && (seg_obj.video_compress_ts_trimmed != ""))
+                file = seg_obj.video_compress_ts_trimmed;
+
+            cat_str = cat_str + file;
+
+            if ((is_last_detected == false) && (seg_obj.type == "last"))
+                is_last_detected = true;
+            else
+                cat_str = cat_str + "|";
+        }
+        n++;
     }
 
-    var cmd_cat = "ffmpeg -i \"" + cat_str + "\" -c copy " + split_obj.dest_file_name_video;
+    var cmd_cat = "ffmpeg -i \"" + cat_str + "\" -c copy " + trim_obj.dest_file_name_video;
     child_process.execSync(cmd_cat);
 }
 
-function catAudioSegments(split_obj) {
-    deleteFileIfExists(split_obj.dest_file_name_audio);
+function catAudioSegments(trim_obj) {
+    deleteFileIfExists(trim_obj.dest_file_name_audio);
+
+    var is_first_detected = false;
+    var is_last_detected = false;
 
     var cat_str = "";
-    for (var n = 0; n < split_obj.segments.length; n++) {
-        var seg_obj = split_obj.segments[n];
+    var n = 0;
+    while ((n < trim_obj.segments.length) && (is_last_detected == false)) {
+        var seg_obj = trim_obj.segments[n];
 
-        var file = seg_obj.audio_compress_aac;
-        if ( ("audio_compress_aac_trimmed" in seg_obj) && (seg_obj.audio_compress_aac_trimmed != "") )
-            file = seg_obj.audio_compress_aac_trimmed;
+        if ((is_first_detected == false) && (seg_obj.type == "first"))
+            is_first_detected = true;
 
-        cat_str = cat_str + file;
-        if (n < split_obj.segments.length - 1)
-            cat_str = cat_str + " ";
+        if (is_first_detected) {
+            var file = seg_obj.audio_compress_aac;
+            if (("audio_compress_aac_trimmed" in seg_obj) && (seg_obj.audio_compress_aac_trimmed != ""))
+                file = seg_obj.audio_compress_aac_trimmed;
+
+            cat_str = cat_str + file;
+
+            if ((is_last_detected == false) && (seg_obj.type == "last"))
+                is_last_detected = true;
+            else
+                cat_str = cat_str + " ";
+        }
+        n++;
     }
 
-    var cmd_cat = "cat " + cat_str + " > " + split_obj.dest_file_name_audio;
-
+    var cmd_cat = "cat " + cat_str + " > " + trim_obj.dest_file_name_audio;
     child_process.execSync(cmd_cat);
 }
 
-function muxAV(split_obj, audio_delay_ms){
-    deleteFileIfExists(split_obj.dest_file);
+function muxAV(trim_obj, audio_delay_ms){
+    deleteFileIfExists(trim_obj.dest_file);
 
-    var cmd_mux = "ffmpeg -i " + split_obj.dest_file_name_video + " -itsoffset " + audio_delay_ms / 1000.0 + " -i " + split_obj.dest_file_name_audio + " -vcodec copy -acodec copy -absf aac_adtstoasc " + split_obj.dest_file;
+    var cmd_mux = "ffmpeg -i " + trim_obj.dest_file_name_video + " -itsoffset " + audio_delay_ms / 1000.0 + " -i " + trim_obj.dest_file_name_audio + " -vcodec copy -acodec copy -absf aac_adtstoasc " + trim_obj.dest_file;
 
     child_process.execSync(cmd_mux);
 }
 
-function getFirstAndLastSegmentFormatData(split_obj) {
-    split_obj.first_segment.file_format = getSegmentFormat(split_obj.first_segment);
-    if (split_obj.single_segment == false) {
-        split_obj.last_segment.file_format = getSegmentFormat(split_obj.last_segment);
-    }
-    else {
-        split_obj.last_segment.file_format = split_obj.first_segment.file_format;
-    }
-}
-
-function getFirstAndLastSegmentStreamsData(split_obj) {
-    var streams_first = getSegmentStreamsData(split_obj.first_segment);
-    split_obj.first_segment.video_stream = getVideoStream(streams_first);
-    split_obj.first_segment.audio_stream = getAudioStream(streams_first);
-    if (split_obj.single_segment == false) {
-        var streams_last = getSegmentStreamsData(split_obj.last_segment);
-        split_obj.last_segment.video_stream = getVideoStream(streams_last);
-        split_obj.last_segment.audio_stream = getAudioStream(streams_last);
-    }
-    else {
-        split_obj.last_segment.video_stream = split_obj.first_segment.video_stream;
-        split_obj.last_segment.audio_stream = split_obj.first_segment.audio_stream;
-    }
-}
-
-function getFirstAndLastSegmentVideoFramesData(split_obj) {
-    split_obj.first_segment.video_frames = getFramesInfo(split_obj.first_segment.video_compress_ts);
-    if (split_obj.single_segment == false) {
-        split_obj.last_segment.video_frames = getFramesInfo(split_obj.last_segment.video_compress_ts);
-    }
-    else {
-        split_obj.last_segment.video_frames = split_obj.first_segment.video_frames;
-    }
-}
-
-function getFirstAndLastSegmentAudioFramesData(split_obj) {
-    split_obj.first_segment.audio_frames = getFramesInfo(split_obj.first_segment.audio_compress_aac);
-    if (split_obj.single_segment == false) {
-        split_obj.last_segment.audio_frames = getFramesInfo(split_obj.last_segment.audio_compress_aac);
-    }
-    else {
-        split_obj.last_segment.audio_frames = split_obj.first_segment.audio_frames;
-    }
-}
-
-function segmentDataValidation(split_obj) {
+function segmentDataValidation(trim_obj) {
     var ret = true;
-    if ((split_obj.first_segment.video_stream == null) || (split_obj.first_segment.audio_stream == null) || (split_obj.last_segment.video_stream == null) || (split_obj.last_segment.audio_stream == null))
+    if ((trim_obj.first_segment.video_stream == null) || (trim_obj.first_segment.audio_stream == null) || (trim_obj.last_segment.video_stream == null) || (trim_obj.last_segment.audio_stream == null))
         ret = false;
 
     return ret;
@@ -464,6 +518,20 @@ function segmentDataValidation(split_obj) {
 
 function calcVideoTsToFrames(ts, video_stream) {
     return ts / ((1.0 / getFrameRate(video_stream)) * 1000.0);
+}
+
+function getVideoFramesInfo(obj_segment) {
+    if (!("video_frames" in obj_segment))
+        obj_segment.video_frames = getFramesInfo(obj_segment.video_compress_ts);
+
+    return obj_segment.video_frames;
+}
+
+function getAudioFramesInfo(obj_segment) {
+    if (!("audio_frames" in obj_segment))
+        obj_segment.audio_frames = getFramesInfo(obj_segment.audio_compress_aac);
+
+    return obj_segment.audio_frames;
 }
 
 function getFramesInfo(media_file) {
@@ -562,27 +630,32 @@ function getAudioNextFrameData(obj_segment, ts_ms) {
     return ret;
 }
 
-function ShowVideoTrimPointsInfo(split_obj) {
-    var num_in_trimmed_video_frames = calcVideoTsToFrames(split_obj.first_segment.in_cut_video_ms, split_obj.first_segment.video_stream);
-    console.log("in_cut_ms (0 based):" + split_obj.first_segment.in_cut_video_ms);
+function ShowVideoTrimPointsInfo(trim_obj) {
+
+    console.log("Trim in segment (first): " + trim_obj.first_segment.original_segment);
+
+    var num_in_trimmed_video_frames = calcVideoTsToFrames(trim_obj.first_segment.in_cut_video_ms, trim_obj.first_segment.video_stream);
+    console.log("in_cut_ms (0 based):" + trim_obj.first_segment.in_cut_video_ms);
     console.log("Number of IN trimmed frames: " + num_in_trimmed_video_frames);
 
-    var num_in_trimmed_video_frames_adjusted = calcVideoTsToFrames(split_obj.first_segment.in_cut_video_ms_adjusted, split_obj.first_segment.video_stream);
-    console.log("in_cut_ms adjusted (0 based):" + split_obj.first_segment.in_cut_video_ms_adjusted);
+    var num_in_trimmed_video_frames_adjusted = calcVideoTsToFrames(trim_obj.first_segment.in_cut_video_ms_adjusted, trim_obj.first_segment.video_stream);
+    console.log("in_cut_ms adjusted (0 based):" + trim_obj.first_segment.in_cut_video_ms_adjusted);
     console.log("Number of IN trimmed frames adjusted: " + num_in_trimmed_video_frames_adjusted);
 
-    var num_out_trimmed_video_frames = calcVideoTsToFrames(split_obj.last_segment.out_cut_video_ms, split_obj.last_segment.video_stream);
-    console.log("out_cut_ms (0 based):" + split_obj.last_segment.out_cut_video_ms);
+    console.log("Trim out segment (last): " + trim_obj.last_segment.original_segment);
+
+    var num_out_trimmed_video_frames = calcVideoTsToFrames(trim_obj.last_segment.out_cut_video_ms, trim_obj.last_segment.video_stream);
+    console.log("out_cut_ms (0 based):" + trim_obj.last_segment.out_cut_video_ms);
     console.log("Number of OUT trimmed frames: " + num_out_trimmed_video_frames);
 
-    var num_out_trimmed_video_frames_adjusted = calcVideoTsToFrames(split_obj.last_segment.out_cut_video_ms_adjusted, split_obj.last_segment.video_stream);
-    console.log("out_cut_ms adjusted(0 based):" + split_obj.last_segment.out_cut_video_ms_adjusted);
+    var num_out_trimmed_video_frames_adjusted = calcVideoTsToFrames(trim_obj.last_segment.out_cut_video_ms_adjusted, trim_obj.last_segment.video_stream);
+    console.log("out_cut_ms adjusted(0 based):" + trim_obj.last_segment.out_cut_video_ms_adjusted);
     console.log("Number of OUT trimmed frames adjusted: " + num_out_trimmed_video_frames_adjusted);
 }
 
-function ShowAudioTrimPointsInfo(split_obj) {
-    console.log("audio_in_data (0 based):" + JSON.stringify(split_obj.first_segment.audio_in_data));
-    console.log("audio_out_data (0 based):" + JSON.stringify(split_obj.last_segment.audio_out_data));
+function ShowAudioTrimPointsInfo(trim_obj) {
+    console.log("audio_in_data (0 based):" + JSON.stringify(trim_obj.first_segment.audio_in_data));
+    console.log("audio_out_data (0 based):" + JSON.stringify(trim_obj.last_segment.audio_out_data));
 }
 
 //Test functions
@@ -610,81 +683,85 @@ var out_trim_ts_ms = parseFloat(process.argv[6]);
 
 var start_exec_ms = new Date().getTime();
 
-var split_obj = create_split_obj(hls_source, tmp_dir, ".ts", dest_file, in_trim_ts_ms, out_trim_ts_ms);
+var trim_obj = create_trim_obj(hls_source, tmp_dir, ".ts", dest_file, in_trim_ts_ms, out_trim_ts_ms);
 
-if (split_obj.segments.length <= 1) {
-    //TODO: implement single segment version (in, and out points in the same segment)
-    console.log("In this version we need more than 1 segment");
+//Find the segment type (first, last, middle) based on input and output trim points
+if (findSegmentType(trim_obj) == false) {
+    console.log("ERROR! Finding first and last segment");
     return 1;
 }
 
 //Get streams data from first and last segment
-getFirstAndLastSegmentFormatData(split_obj);
-getFirstAndLastSegmentStreamsData(split_obj);
+getSegmentFormat(trim_obj.first_segment);
+getSegmentFormat(trim_obj.last_segment);
+
+getSegmentStreamsData(trim_obj.first_segment);
+getSegmentStreamsData(trim_obj.last_segment);
 
 //Validations
-if (segmentDataValidation(split_obj) == false) {
+if (segmentDataValidation(trim_obj) == false) {
     console.log("Error getting the video or audio data from first of last segment");
     return 1;
 }
 
 //Split A/V of every .ts
 //Creates ts (video) and AAC (audio)
-splitVideoTSAudioAacFromTSFiles(split_obj.segments);
+splitVideoTSAudioAacFromTSFiles(trim_obj.segments);
 
 //Get video frames info for the first and last segments
-getFirstAndLastSegmentVideoFramesData(split_obj);
+getVideoFramesInfo(trim_obj.first_segment);
+getVideoFramesInfo(trim_obj.last_segment);
 
 //Calculate trim in VIDEO place from 1st segment (referenced to segment start = 0)
-split_obj.first_segment.in_cut_video_ms = split_obj.in_trim_ts_ms - (split_obj.first_segment.video_stream.start_time * 1000.0);
-if (split_obj.first_segment.in_cut_video_ms < 0) {
+trim_obj.first_segment.in_cut_video_ms = trim_obj.in_trim_ts_ms - (trim_obj.first_segment.video_stream.start_time * 1000.0);
+if (trim_obj.first_segment.in_cut_video_ms < 0) {
     console.log("Warning VIDEO in trim point < 0. Assumed no trim in!");
-    split_obj.first_segment.in_cut_video_ms = -1;
-    split_obj.first_segment.in_cut_video_ms_adjusted = -1;
+    trim_obj.first_segment.in_cut_video_ms = -1;
+    trim_obj.first_segment.in_cut_video_ms_adjusted = -1;
 }
 else {
     //based on experience. Looks like ffmpeg -ss X start writing at the closest X
-    var tmp = getVideoNextFrameData(split_obj.first_segment, split_obj.first_segment.in_cut_video_ms, -3);
+    var tmp = getVideoNextFrameData(trim_obj.first_segment, trim_obj.first_segment.in_cut_video_ms, -3);
     if (tmp == null) {
         console.log("Error getting the ts from first segment");
         return 1;
     }
-    split_obj.first_segment.in_cut_video_ms_adjusted = tmp.ffmpeg_ts_ms;
-    split_obj.first_segment.in_first_video_ts_ms = tmp.first_ts_in_the_file_ms;
+    trim_obj.first_segment.in_cut_video_ms_adjusted = tmp.ffmpeg_ts_ms;
+    trim_obj.first_segment.in_first_video_ts_ms = tmp.first_ts_in_the_file_ms;
 }
 
 //Calculate trim out VIDEO place from last segment (referenced to segment start = 0)
-split_obj.last_segment.out_cut_video_ms = split_obj.out_trim_ts_ms - (split_obj.last_segment.video_stream.start_time * 1000.0);
-if (split_obj.last_segment.out_cut_video_ms < 0) {
+trim_obj.last_segment.out_cut_video_ms = trim_obj.out_trim_ts_ms - (trim_obj.last_segment.video_stream.start_time * 1000.0);
+if (trim_obj.last_segment.out_cut_video_ms < 0) {
     console.log("Warning VIDEO out trim point < 0. Assumed NO trim out!");
-    split_obj.last_segment.out_cut_video_ms = -1;
-    split_obj.last_segment.out_cut_video_ms_adjusted = -1;
+    trim_obj.last_segment.out_cut_video_ms = -1;
+    trim_obj.last_segment.out_cut_video_ms_adjusted = -1;
 }
 else {
     //based on experience. Looks like ffmpeg -t X start writing after the X
-    var tmp = getVideoNextFrameData(split_obj.last_segment, split_obj.last_segment.out_cut_video_ms, 3);
+    var tmp = getVideoNextFrameData(trim_obj.last_segment, trim_obj.last_segment.out_cut_video_ms, 3);
     if (tmp == null) {
         console.log("Error getting the ts from last segment");
         return 1;
     }
-    split_obj.last_segment.out_cut_video_ms_adjusted = tmp.ffmpeg_ts_ms;
-    split_obj.last_segment.in_first_video_ts_ms = tmp.first_ts_in_the_file_ms;
+    trim_obj.last_segment.out_cut_video_ms_adjusted = tmp.ffmpeg_ts_ms;
+    trim_obj.last_segment.in_first_video_ts_ms = tmp.first_ts_in_the_file_ms;
 }
 
 //Show video cut points info Info
-ShowVideoTrimPointsInfo(split_obj);
+ShowVideoTrimPointsInfo(trim_obj);
 
 //Convert 1st and last segments to YUV (raw)
-convertToRaw(split_obj.first_segment);
-if (split_obj.single_segment == false)
-    convertToRaw(split_obj.last_segment);
+convertToRaw(trim_obj.first_segment);
+if (trim_obj.single_segment == false)
+    convertToRaw(trim_obj.last_segment);
 
 //Trim VIDEO initial segment
-trimMediaByTs(split_obj.first_segment, true, split_obj.first_segment.in_cut_video_ms_adjusted);
+trimMediaByTs(trim_obj.first_segment, true, trim_obj.first_segment.in_cut_video_ms_adjusted);
 
 //Trim VIDEO last segment
-if (split_obj.single_segment == false) {
-    trimMediaByTs(split_obj.last_segment, false, split_obj.last_segment.out_cut_video_ms_adjusted);
+if (trim_obj.single_segment == false) {
+    trimMediaByTs(trim_obj.last_segment, false, trim_obj.last_segment.out_cut_video_ms_adjusted);
 }
 else {
     //TODO: implement single segment version (in, and out points in the same segment)
@@ -692,36 +769,37 @@ else {
 }
 
 //Encode first and last segment (with the same coding params than the original segment)
-if (encodeVideoStream(split_obj.first_segment) == false) {
+if (encodeVideoStream(trim_obj.first_segment) == false) {
     console.log("ERROR! Encoding the first segment (trimmed)");
     return 1;
 }
-if (encodeVideoStream(split_obj.last_segment) == false) {
+if (encodeVideoStream(trim_obj.last_segment) == false) {
     console.log("ERROR! Encoding the last segment (trimmed)");
     return 1;
 }
 
 //Concatenate VIDEO using concat (including trimmed first and last segments)
-concatVideoSegments(split_obj);
+catVideoSegments(trim_obj);
 
 //Get audio frames info for the first and last segments
-getFirstAndLastSegmentAudioFramesData(split_obj);
+getAudioFramesInfo(trim_obj.first_segment);
+getAudioFramesInfo(trim_obj.last_segment);
 
 //Calculate in AUDIO point (referenced to segment start = 0)
-split_obj.first_segment.audio_in_data = getAudioNextFrameData(split_obj.first_segment, split_obj.first_segment.in_first_video_ts_ms);
+trim_obj.first_segment.audio_in_data = getAudioNextFrameData(trim_obj.first_segment, trim_obj.first_segment.in_first_video_ts_ms);
 
 //Calculate in AUDIO point (referenced to segment start = 0)
-split_obj.last_segment.audio_out_data = getAudioLastFrameData(split_obj.last_segment, split_obj.last_segment.in_first_video_ts_ms);
+trim_obj.last_segment.audio_out_data = getAudioLastFrameData(trim_obj.last_segment, trim_obj.last_segment.in_first_video_ts_ms);
 
 //Show audio cut points info Info
-ShowAudioTrimPointsInfo(split_obj);
+ShowAudioTrimPointsInfo(trim_obj);
 
 //Trim AUDIO initial segment
-trimInFileByBytes(split_obj.first_segment.audio_compress_aac, split_obj.first_segment.audio_compress_aac_trimmed, split_obj.first_segment.audio_in_data.byte_start_pos);
+trimInFileByBytes(trim_obj.first_segment.audio_compress_aac, trim_obj.first_segment.audio_compress_aac_trimmed, trim_obj.first_segment.audio_in_data.byte_start_pos);
 
 //Trim AUDIO last segment
-if (split_obj.single_segment == false) {
-    trimOutFileByBytes(split_obj.last_segment.audio_compress_aac, split_obj.last_segment.audio_compress_aac_trimmed, split_obj.last_segment.audio_out_data.byte_end_pos);
+if (trim_obj.single_segment == false) {
+    trimOutFileByBytes(trim_obj.last_segment.audio_compress_aac, trim_obj.last_segment.audio_compress_aac_trimmed, trim_obj.last_segment.audio_out_data.byte_end_pos);
 }
 else {
     //TODO: implement single segment version (in, and out points in the same segment)
@@ -729,17 +807,17 @@ else {
 }
 
 //Concatenate AUDIO using simple cat (including trimmed first and last segments)
-catAudioSegments(split_obj);
+catAudioSegments(trim_obj);
 
 //Mux A/V taking into account the AV delay form the first A/V frame
-var audio_delay_ms = split_obj.first_segment.audio_in_data.ts_ms - split_obj.first_segment.in_first_video_ts_ms;
+var audio_delay_ms = trim_obj.first_segment.audio_in_data.ts_ms - trim_obj.first_segment.in_first_video_ts_ms;
 if (audio_delay_ms < 0) {
     audio_delay_ms = 0;
     console.log("Warning!!! audio delay < 0, something is wrong. Assumed audio_delay_ms = 0ms");
 }
 
 console.log("audio_delay_ms: " + audio_delay_ms);
-muxAV(split_obj, audio_delay_ms);
+muxAV(trim_obj, audio_delay_ms);
 
 //End
 var end_exec_ms = new Date().getTime();

@@ -18,17 +18,18 @@
     - Increase dramatically the speed of video editors (mostly cloud video editors)
 
 #How it works
-1. Split A/V form all input chunks, creating a .h264 and .acc files (just parsing operation)
+1. Based on the in an out points analyze the input files an establish which are the first and last segments
+1. Split A/V of the necessary chunks, creating a .h264 and .acc files (just parsing operation)
 2. For the first and the last chunks:
     - Get video frame position information from and calculate the video cutting point to preserve frame accuracy
     - Decode to YUV the first and last video chunks
     - Encode the trimmed YUV to the same codec as the original files
-3. Concatenate all video segments to a final video .ts
+3. Concatenate the video segments to a final video .ts
 4. For the first and the last audio chunks:
     - Get audio frame position information and calculate the audio cutting points based on video cutting points to preserve A/V alignment
     - Calculate AV delay necessary at the output file to preserve AV alignment
     - Trim the stream at packet level
-5. Concatenate all audio segments to a final audio .aac
+5. Concatenate the audio segments to a final audio .aac
 6. Mux final video and final audio file to MP4 preserving the previously calculated A/V delay
 
 
@@ -38,6 +39,7 @@
 - Only 1 video and 1 audio present in the input files
 - The trim in timestamp and the trim out timestamp belongs to different chunks
 - If you use hls manifest (.m3u8) as a source, only relative local paths are allowed
+- The A/V delay in the original stream is reasonable (<2s)
 
 #Future work
 - Handle single segment trims (in point and out point in the same segment)
