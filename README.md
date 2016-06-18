@@ -1,6 +1,6 @@
 # HLS super fast frame accuracy trimming (JS)
 
-![Image of HLS trimming](./img/hls_trim.png)
+![Image of HLS trimming](./img/hls_trimming.png)
 
 #Usage
 - Install: ffmpeg and nodejs
