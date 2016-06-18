@@ -24,5 +24,14 @@ in_trim_ts_2_ms=71340583.4003333
 #( 71346.250067 + ((1/30) * 60) ) * 1000.0
 out_trim_ts_2_ms=71348250.067
 
+#Trim 60 frames from the 4th segment. Assuming 30fps and startTimestamp of 4th chunk = 71352.250067s
+#( 71352.250067 + ((1/30) * 60) ) * 1000.0
+in_trim_ts_3_ms=71354250.067
+
+#Trim all content after 150 frames of the 4th segment. Assuming 30fps and startTimestamp of the 4th chunk = 71352.250067s
+#( 71352.250067 + ((1/30) * 150) ) * 1000.0
+out_trim_ts_3_ms=71357250.067
+
 #./trim_hls_frame_acc.js $hls_source_dir $dest_file $tmp_dir $in_trim_ts_ms $out_trim_ts_ms
-./trim_hls_frame_acc.js $hls_source_manifest $dest_file $tmp_dir $in_trim_ts_2_ms $out_trim_ts_2_ms
+#./trim_hls_frame_acc.js $hls_source_manifest $dest_file $tmp_dir $in_trim_ts_2_ms $out_trim_ts_2_ms
+./trim_hls_frame_acc.js $hls_source_manifest $dest_file $tmp_dir $in_trim_ts_3_ms $out_trim_ts_3_ms

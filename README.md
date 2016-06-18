@@ -10,10 +10,10 @@
     - Example2: `./trim_hls_frame_acc /hls_test/test.m3u8 /out/test.mp4 /tmp 10.0 21.2`
 
 #Description
-- This is an evolution of this code: [Trim HLS stream with frame accuracy using [ffmpeg](https://ffmpeg.org/) and Bash script](https://jordicenzano.name/2014/08/07/trim-hls-stream-with-frame-accuracy-using-ffmpeg-and-bash-script-2/)
-- This code gets a group if HLS chunks (.ts) and input and output timestamps and creates an output mp4 file frame accuracy trimmed, AV perfectly aligned, and thanks to the underlying algorithm in a very small amount of time.
-- This algorithm can be useful to:
-    - On the fly live streaming trimming
+- This code is an evolution of this code: [Trim HLS stream with frame accuracy using [ffmpeg](https://ffmpeg.org/) and Bash script](https://jordicenzano.name/2014/08/07/trim-hls-stream-with-frame-accuracy-using-ffmpeg-and-bash-script-2/)
+- The purpose of this code gets a group if HLS chunks (.ts) and input and output timestamps and creates an output mp4 file frame accuracy trimmed, AV perfectly aligned, and thanks to the underlying algorithm in a very small amount of time.
+- It can be useful to:
+    - On the fly live streaming trimming (highlights)
     - VOD frame accuracy trimming
     - Increase dramatically the speed of video editors (mostly cloud video editors)
 
@@ -37,16 +37,14 @@
 - The video codec is H264 and the audio coded is aac
 - All the chunks start with and I frame
 - Only 1 video and 1 audio present in the input files
-- The trim in timestamp and the trim out timestamp belongs to different chunks
 - If you use hls manifest (.m3u8) as a source, only relative local paths are allowed
 - The A/V delay in the original stream is reasonable (<2s)
 
 #Future work
-- Handle single segment trims (in point and out point in the same segment)
 - Make the code usable for any input different than HLS
 - Apply multi-threaded processing in some stages to speed up the process (reasonable goal is to increase the speed x2)
 - Modify the code to process the input files at video GOP level (not chunk level)
-    - Increase the processing speed (GOP vs Chunk)
+    - Increase the processing speed (GOPs use to be smaller than chunks)
     - No need that chunks start with I frame
     - Easier to handle other formats different than HLS
     
