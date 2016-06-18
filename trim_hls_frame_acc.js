@@ -31,7 +31,8 @@ function create_trim_obj(source, tmp_dir, in_file_ext, dest_file, in_trim_ts_ms,
         "last_segment": null,
         "source_dir": "",
         "files": [],
-        "segments": []
+        "segments": [],
+        "trim_segments": []
     };
 
     deleteFileIfExists(ret.dest_file);
@@ -171,7 +172,27 @@ function findSegmentType(trim_obj) {
         return false;
     }
 
-    if (trim_obj.first_segment.type == "") {
+    //Load segments involved to trim
+    var is_first_detected = false;
+    var is_last_detected = false;
+
+    var n = 0;
+    while ((n < trim_obj.segments.length) && (is_last_detected == false)) {
+        var seg_obj = trim_obj.segments[n];
+
+        if ( (is_first_detected == false) && ((seg_obj.type == "first") || (seg_obj.type == "first-last")) )
+            is_first_detected = true;
+
+        if (is_first_detected) {
+            trim_obj.trim_segments.push(seg_obj);
+
+            if ((is_last_detected == false) && ((seg_obj.type == "last") || (seg_obj.type == "first-last")) )
+                is_last_detected = true;
+        }
+        n++;
+    }
+
+    if (trim_obj.trim_segments.length <= 1) {
         //TODO: implement single segment version (in, and out points in the same segment)
         console.log("In this version we need the in and out points in different segments");
         return false;
@@ -232,11 +253,13 @@ function filterArray(array, ext) {
     }
 }
 
-function splitVideoTSAudioAacFromTSFiles(trim_obj) {
-    trim_obj.forEach(splitVideoTSAudioAacFromTSFile);
+function splitVideoTSAudioAacFromTSFiles(segments) {
+    segments.forEach(splitVideoTSAudioAacFromTSFile);
 }
 
 function splitVideoTSAudioAacFromTSFile(obj_segment, index, array) {
+
+    console.log("Splitting A/V from: " + obj_segment.original_segment_name);
 
     //Split V to ts (Needed to concat video)
     var destVts = obj_segment.video_compress_ts;
@@ -437,30 +460,17 @@ function catVideoSegments(trim_obj) {
 
     deleteFileIfExists(trim_obj.dest_file_name_video);
 
-    var is_first_detected = false;
-    var is_last_detected = false;
-
     var cat_str = "concat:";
-    var n = 0;
-    while ((n < trim_obj.segments.length) && (is_last_detected == false)) {
-        var seg_obj = trim_obj.segments[n];
+    for (var n = 0; n < trim_obj.trim_segments.length; n++) {
+        var seg_obj = trim_obj.trim_segments[n];
 
-        if ((is_first_detected == false) && (seg_obj.type == "first"))
-            is_first_detected = true;
+        var file = seg_obj.video_compress_ts;
+        if ( ("video_compress_ts_trimmed" in seg_obj) && (seg_obj.video_compress_ts_trimmed != "") )
+            file = seg_obj.video_compress_ts_trimmed;
 
-        if (is_first_detected) {
-            var file = seg_obj.video_compress_ts;
-            if (("video_compress_ts_trimmed" in seg_obj) && (seg_obj.video_compress_ts_trimmed != ""))
-                file = seg_obj.video_compress_ts_trimmed;
-
-            cat_str = cat_str + file;
-
-            if ((is_last_detected == false) && (seg_obj.type == "last"))
-                is_last_detected = true;
-            else
-                cat_str = cat_str + "|";
-        }
-        n++;
+        cat_str = cat_str + file;
+        if (n < trim_obj.trim_segments.length - 1)
+            cat_str = cat_str + "|";
     }
 
     var cmd_cat = "ffmpeg -i \"" + cat_str + "\" -c copy " + trim_obj.dest_file_name_video;
@@ -470,30 +480,17 @@ function catVideoSegments(trim_obj) {
 function catAudioSegments(trim_obj) {
     deleteFileIfExists(trim_obj.dest_file_name_audio);
 
-    var is_first_detected = false;
-    var is_last_detected = false;
-
     var cat_str = "";
-    var n = 0;
-    while ((n < trim_obj.segments.length) && (is_last_detected == false)) {
-        var seg_obj = trim_obj.segments[n];
+    for (var n = 0; n < trim_obj.trim_segments.length; n++) {
+        var seg_obj = trim_obj.trim_segments[n];
 
-        if ((is_first_detected == false) && (seg_obj.type == "first"))
-            is_first_detected = true;
+        var file = seg_obj.audio_compress_aac;
+        if ( ("audio_compress_aac_trimmed" in seg_obj) && (seg_obj.audio_compress_aac_trimmed != "") )
+            file = seg_obj.audio_compress_aac_trimmed;
 
-        if (is_first_detected) {
-            var file = seg_obj.audio_compress_aac;
-            if (("audio_compress_aac_trimmed" in seg_obj) && (seg_obj.audio_compress_aac_trimmed != ""))
-                file = seg_obj.audio_compress_aac_trimmed;
-
-            cat_str = cat_str + file;
-
-            if ((is_last_detected == false) && (seg_obj.type == "last"))
-                is_last_detected = true;
-            else
-                cat_str = cat_str + " ";
-        }
-        n++;
+        cat_str = cat_str + file;
+        if (n < trim_obj.trim_segments.length - 1)
+            cat_str = cat_str + " ";
     }
 
     var cmd_cat = "cat " + cat_str + " > " + trim_obj.dest_file_name_audio;
@@ -508,9 +505,9 @@ function muxAV(trim_obj, audio_delay_ms){
     child_process.execSync(cmd_mux);
 }
 
-function segmentDataValidation(trim_obj) {
+function segmentDataValidation(segment) {
     var ret = true;
-    if ((trim_obj.first_segment.video_stream == null) || (trim_obj.first_segment.audio_stream == null) || (trim_obj.last_segment.video_stream == null) || (trim_obj.last_segment.audio_stream == null))
+    if ( (segment.video_stream == null) || (segment.audio_stream == null) )
         ret = false;
 
     return ret;
@@ -699,14 +696,14 @@ getSegmentStreamsData(trim_obj.first_segment);
 getSegmentStreamsData(trim_obj.last_segment);
 
 //Validations
-if (segmentDataValidation(trim_obj) == false) {
+if ((segmentDataValidation(trim_obj.first_segment) == false) || (segmentDataValidation(trim_obj.last_segment) == false) ) {
     console.log("Error getting the video or audio data from first of last segment");
     return 1;
 }
 
 //Split A/V of every .ts
 //Creates ts (video) and AAC (audio)
-splitVideoTSAudioAacFromTSFiles(trim_obj.segments);
+splitVideoTSAudioAacFromTSFiles(trim_obj.trim_segments);
 
 //Get video frames info for the first and last segments
 getVideoFramesInfo(trim_obj.first_segment);
