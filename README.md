@@ -22,7 +22,7 @@
 1. Split A/V of the necessary chunks, creating a .h264 and .acc files (just parsing operation)
 2. For the first and the last chunks:
     - Get video frame position information from and calculate the video cutting point to preserve frame accuracy
-    - Decode to YUV the first and last video chunks
+    - Decode to YUV
     - Encode the trimmed YUV to the same codec as the original files
 3. Concatenate the video segments to a final video .ts
 4. For the first and the last audio chunks:
@@ -31,7 +31,6 @@
     - Trim the stream at packet level
 5. Concatenate the audio segments to a final audio .aac
 6. Mux final video and final audio file to MP4 preserving the previously calculated A/V delay
-
 
 #Assumptions
 - The video codec is H264 and the audio coded is aac
