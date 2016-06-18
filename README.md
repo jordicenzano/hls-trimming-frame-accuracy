@@ -45,7 +45,7 @@
 - Handle single segment trims (in point and out point in the same segment)
 - Make the code usable for any input different than HLS
 - Apply multi-threaded processing in some stages to speed up the process (reasonable goal is to increase the speed x2)
-- Modify the code to treat the input files at video GOP
+- Modify the code to process the input files at video GOP level (not chunk level)
     - Increase the processing speed (GOP vs Chunk)
     - No need that chunks start with I frame
     - Easier to handle other formats different than HLS
