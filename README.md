@@ -44,8 +44,7 @@
 #Future work
 - Handle single segment trims (in point and out point in the same segment)
 - Make the code usable for any input different than HLS
-- Use the manifest as input parameter, not directory
-    - Find the first and last segment based on the input and output timestamp (now we are assuming that we know what are the first and last segment)
+- Apply multi-threaded processing in some stages to speed up the process (reasonable goal is to increase the speed x2)
 - Modify the code to treat the input files at video GOP
     - Increase the processing speed (GOP vs Chunk)
     - No need that chunks start with I frame

@@ -7,9 +7,6 @@
 //SUPER FAST FRAME ACCURACY HLS TRIMMING
 // ***************************************************************
 
-//TODO: JOC fix extra audio frames at the end (probably due to the introduces offset)
-//TODO: JOC Only split the ones that needs:
-
 //External
 const fs = require('fs');
 var path = require('path');
@@ -571,16 +568,16 @@ function getVideoNextFrameData(obj_segment, ts_ms, delta_ms) {
     return ret;
 }
 
-function getAudioLastFrameData(obj_segment, ts_ms) {
+function getAudioLastFrameData(obj_segment, ts_ms, initial_ts_ms) {
     var n = 0;
     var ret = null;
 
     if (ts_ms > 0) {
-        var current_pos_ms = 0.0;
+        var current_pos_ms = initial_ts_ms;
 
         while ((ret == null) && (n < obj_segment.audio_frames.frames.length)) {
             var frame = obj_segment.audio_frames.frames[n];
-            var frame_duration_ms = frame.pkt_duration_time * 1000.0;
+            var frame_duration_ms = parseFloat(frame.pkt_duration_time) * 1000.0;
 
             if ((current_pos_ms + frame_duration_ms) > ts_ms) {
                 ret = {
@@ -608,7 +605,7 @@ function getAudioNextFrameData(obj_segment, ts_ms) {
 
         while ((ret == null) && (n < obj_segment.audio_frames.frames.length)) {
             var frame = obj_segment.audio_frames.frames[n];
-            var frame_duration_ms = frame.pkt_duration_time * 1000.0;
+            var frame_duration_ms = parseFloat(frame.pkt_duration_time) * 1000.0;
 
             if (current_pos_ms > ts_ms) {
                 ret = {
@@ -661,7 +658,7 @@ function logArrayElements(element, index, array) {
 }
 
 //Main
-//***********************
+//******************************************************************************
 
 //Parse input data
 if (process.argv.length != 7) {
@@ -785,8 +782,15 @@ getAudioFramesInfo(trim_obj.last_segment);
 //Calculate in AUDIO point (referenced to segment start = 0)
 trim_obj.first_segment.audio_in_data = getAudioNextFrameData(trim_obj.first_segment, trim_obj.first_segment.in_first_video_ts_ms);
 
+//Calculate the audio delay that we will introduce when we mux the final stream
+var audio_delay_ms = trim_obj.first_segment.audio_in_data.ts_ms - trim_obj.first_segment.in_first_video_ts_ms;
+if (audio_delay_ms < 0) {
+    audio_delay_ms = 0;
+    console.log("Warning!!! audio delay < 0, something is wrong. Assumed audio_delay_ms = 0ms");
+}
+
 //Calculate in AUDIO point (referenced to segment start = 0)
-trim_obj.last_segment.audio_out_data = getAudioLastFrameData(trim_obj.last_segment, trim_obj.last_segment.in_first_video_ts_ms);
+trim_obj.last_segment.audio_out_data = getAudioLastFrameData(trim_obj.last_segment, trim_obj.last_segment.in_first_video_ts_ms, audio_delay_ms);
 
 //Show audio cut points info Info
 ShowAudioTrimPointsInfo(trim_obj);
@@ -807,12 +811,6 @@ else {
 catAudioSegments(trim_obj);
 
 //Mux A/V taking into account the AV delay form the first A/V frame
-var audio_delay_ms = trim_obj.first_segment.audio_in_data.ts_ms - trim_obj.first_segment.in_first_video_ts_ms;
-if (audio_delay_ms < 0) {
-    audio_delay_ms = 0;
-    console.log("Warning!!! audio delay < 0, something is wrong. Assumed audio_delay_ms = 0ms");
-}
-
 console.log("audio_delay_ms: " + audio_delay_ms);
 muxAV(trim_obj, audio_delay_ms);
 
