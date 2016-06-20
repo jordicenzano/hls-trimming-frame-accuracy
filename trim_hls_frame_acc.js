@@ -313,8 +313,11 @@ function trimInFileByBytes(src, dst, in_b) {
 
     console.log("Trimming IN audio from: " + src + " To: " + dst + ". In bytes: " + in_b);
 
-    var cmd_to_raw = "dd if=" + src + " of=" + dst + " bs=1 skip=" + in_b;
+
+    var cmd_to_raw = "cat " + src + "| tail -c+" + in_b + " > " + dst;
+    //var cmd_to_raw = "dd if=" + src + " of=" + dst + " bs=1 skip=" + in_b;
     child_process.execSync(cmd_to_raw);
+
 }
 
 function trimOutFileByBytes(src, dst, count_b) {
@@ -322,7 +325,8 @@ function trimOutFileByBytes(src, dst, count_b) {
 
     console.log("Trimming OUT audio from: " + src + " To: " + dst + ". Count bytes: " + count_b);
 
-    var cmd_to_raw = "dd if=" + src + " of=" + dst + " bs=1 count=" + count_b;
+    var cmd_to_raw = "cat " + src + "| head -c" + count_b + " > " + dst;
+    //var cmd_to_raw = "dd if=" + src + " of=" + dst + " bs=1 count=" + count_b;
     child_process.execSync(cmd_to_raw);
 }
 
@@ -331,7 +335,8 @@ function trimInOutFileByBytes(src, dst, in_b, out_b) {
 
     console.log("Trimming OUT audio from: " + src + " To: " + dst + ". In bytes: " + in_b +  ", Count bytes: " + out_b);
 
-    var cmd_to_raw = "dd if=" + src + " of=" + dst + " bs=1 skip=" + in_b + " count=" + (out_b - in_b);
+    var cmd_to_raw = "cat " + src + "| tail -c+" + in_b + " | head -c"+ (out_b - in_b) + " > " + dst;
+    //var cmd_to_raw = "dd if=" + src + " of=" + dst + " bs=1 skip=" + in_b + " count=" + (out_b - in_b);
     child_process.execSync(cmd_to_raw);
 }
 
