@@ -19,7 +19,7 @@
 
 #How it works
 1. Based on the in an out points analyze the input files an establish which are the first and last segments
-1. Split A/V of the necessary chunks, creating a .h264 and .acc files (just parsing operation)
+1. Split A/V of the necessary chunks, creating a .ts (video only) and .acc files. It is just a parsing operation.
 2. For the first and the last chunks:
     - Get video frame position information from and calculate the video cutting point to preserve frame accuracy
     - Decode to YUV

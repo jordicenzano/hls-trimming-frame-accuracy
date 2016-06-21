@@ -739,7 +739,8 @@ var tmp_dir = process.argv[4];
 var in_trim_ts_ms = parseFloat(process.argv[5]);
 var out_trim_ts_ms = parseFloat(process.argv[6]);
 
-var start_exec_ms = new Date().getTime();
+var start_exec = new Date();
+console.log("Start exec: " + start_exec.toISOString() );
 
 var trim_obj = create_trim_obj(hls_source, tmp_dir, ".ts", dest_file, in_trim_ts_ms, out_trim_ts_ms);
 
@@ -888,7 +889,8 @@ console.log("audio_delay_ms: " + audio_delay_ms);
 muxAV(trim_obj.dest_file_name_video, trim_obj.dest_file_name_audio, trim_obj.dest_file, audio_delay_ms);
 
 //End
-var end_exec_ms = new Date().getTime();
+var end_exec = new Date();
+console.log("End exec: " + end_exec.toISOString() );
 
-console.log("Finished!!! Execution time: " + (end_exec_ms - start_exec_ms) / 1000.0);
+console.log("Finished!!! Execution time: " + (end_exec.getTime() - start_exec.getTime()) / 1000.0);
 return 0;
