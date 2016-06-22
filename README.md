@@ -34,7 +34,7 @@
 
 #Assumptions
 - The video codec is H264 and the audio coded is aac
-- All the chunks start with and I frame
+- All the chunks start with and I frame (wowza forces an I frame at start of chunks, event the transmuxed ones)
 - Only 1 video and 1 audio present in the input files
 - If you use hls manifest (.m3u8) as a source, only relative local paths are allowed
 - The A/V delay in the original stream is reasonable (<2s)
